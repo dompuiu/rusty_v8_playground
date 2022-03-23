@@ -8,13 +8,16 @@ use color_eyre::eyre::Result;
 use std::fs::File;
 use std::io::prelude::*;
 use std::{convert::TryInto, time};
+use tokio::task;
 use tokio::time::{sleep, Duration};
 
-// #[tokio::main]
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     initialize_v8();
+
     let code_from_file = read_code()?;
     run_code(code_from_file);
+    loop {}
 
     unsafe {
         v8::V8::dispose();
@@ -101,17 +104,25 @@ fn print(scope: &mut v8::HandleScope, args: v8::FunctionCallbackArguments, _: v8
     println!("console.log: {}", result);
 }
 
-fn set_timeout(
-    scope: &mut v8::HandleScope,
-    args: v8::FunctionCallbackArguments,
-    _: v8::ReturnValue,
+async fn set_timeout(
+    scope: &mut v8::HandleScope<'_>,
+    args: v8::FunctionCallbackArguments<'_>,
+    _: v8::ReturnValue<'_>,
 ) {
-    let timeout_fn = args.get(0).is_function();
+    let timeout_fn = args.get(0);
     let timeout = args.get(1).integer_value(scope).unwrap();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        sleep(Duration::from_millis(timeout.try_into().unwrap())).await;
-        println!("{} ms have elapsed {}", timeout, timeout_fn);
+    let fn1: Result<v8::Local<v8::Function>, _> = timeout_fn.try_into();
+    let x = fn1.unwrap();
+    let recv = v8::String::new(scope, "console2").unwrap();
+    let args = [];
+
+    let handle = task::spawn(async {
+        // sleep(Duration::from_millis(timeout.try_into().unwrap())).await;
+        // println!("{} ms have elapsed", timeout);
     });
+
+    handle.await;
+
+    x.call(scope, recv.into(), &args);
 }
